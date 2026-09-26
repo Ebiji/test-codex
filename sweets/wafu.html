@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Senbei Wafu</title>
+<style>
+  @font-face { font-family: 'Syuku'; src: url('../assets/fonts/YujiSyuku-Regular-ja.woff2') format('woff2'); }
+  @font-face { font-family: 'Mincho'; src: url('../assets/fonts/ShipporiMincho-ExtraBold-ja.woff2') format('woff2'); font-weight: 800; }
+  html, body { margin: 0; background: #000; }
+  #stage { display: block; width: 1920px; height: 1080px; }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1920" height="1080"></canvas>
+<script>
+// おせんべいの写真に和風で渋めの演出をかける 5 秒動画。
+// 墨色の帯と青海波、立ちのぼる湯気、舞う金箔、縦書きの筆文字と落款。
+// window.render(t) で任意時刻のフレームを描画する（tools/render_sweets.mjs が書き出しに使う）。
+const W = 1920, H = 1080;
+window.DURATION = 5;
+const cv = document.getElementById('stage');
+const ctx = cv.getContext('2d');
+const params = new URLSearchParams(location.search);
+const TITLE = params.get('title') || '香ばしい';
+const SUB = params.get('sub') || 'ぱりっと、ひと休み。';
+const SEAL = params.get('seal') || '焼';
+
+function rng(seed) {
+  return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+}
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
+const easeOut = (x) => 1 - (1 - clamp(x)) ** 3;
+const backOut = (x) => { x = clamp(x); const c = 1.8; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+
+const SUMI = '#15100b';
+const GOLD = '#c9a55c';
+const SHU = '#a8322a';
+
+const img = new Image();
+img.src = params.get('src') || 'senbei.webp';
+
+let steam = [], leaf = [], glints = [], sealTex;
+
+// 写真のハイライト（焼き目のつや）を探す。お皿の上だけに絞って、数も控えめに
+function findHighlights() {
+  const sw = 240, sh = Math.round(240 * img.height / img.width);
+  const c = document.createElement('canvas'); c.width = sw; c.height = sh;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0, sw, sh);
+  const d = g.getImageData(0, 0, sw, sh).data;
+  const lum = (x, y) => { const i = (y * sw + x) * 4; return 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; };
+  const cand = [];
+  for (let y = Math.floor(sh * 0.3); y < sh * 0.85; y++) for (let x = Math.floor(sw * 0.2); x < sw * 0.85; x++) {
+    const l = lum(x, y);
+    let isMax = true;
+    for (let dy = -2; dy <= 2 && isMax; dy++) for (let dx = -2; dx <= 2; dx++) {
+      if ((dx || dy) && lum(x + dx, y + dy) > l) { isMax = false; break; }
+    }
+    if (isMax) cand.push({ x: (x + 0.5) / sw, y: (y + 0.5) / sh, s: l });
+  }
+  cand.sort((a, b) => b.s - a.s);
+  const out = [];
+  for (const p of cand) {
+    if (out.every((q) => Math.hypot((q.x - p.x) * 16, (q.y - p.y) * 9) > 1.1)) out.push(p);
+    if (out.length >= 14) break;
+  }
+  return out;
+}
+
+function setup() {
+  const r = rng(1945);
+  // 湯気：湯のみから 1 本、焼きたてのおせんべいから数本
+  const sources = [{ x: 0.13, y: 0.2, w: 0.08, n: 70 }, { x: 0.5, y: 0.42, w: 0.3, n: 110 }];
+  for (const s of sources) for (let i = 0; i < s.n; i++) steam.push({
+    x: s.x + (r() - 0.5) * s.w, y: s.y, life: 2.2 + r() * 1.6, born: r() * 4 - 4, rise: 110 + r() * 90,
+    sway: 20 + r() * 40, swayF: 0.3 + r() * 0.5, ph: r() * 6.28, r0: 22 + r() * 22, a: 0.14 + r() * 0.1,
+  });
+  // 金箔：ゆっくり舞い落ちる不揃いな小片
+  for (let i = 0; i < 26; i++) {
+    const pts = [];
+    const n = 5 + Math.floor(r() * 3);
+    for (let k = 0; k < n; k++) { const a = (k / n) * Math.PI * 2; const rr = 0.55 + r() * 0.45; pts.push([Math.cos(a) * rr, Math.sin(a) * rr]); }
+    leaf.push({ x: r() * W, y: r() * H - H * 0.2, s: 6 + r() * 12, fall: 35 + r() * 45, drift: 10 + r() * 25,
+      spin: (r() - 0.5) * 2, flip: 1.2 + r() * 2, ph: r() * 6.28, pts });
+  }
+  glints = findHighlights().map((p) => ({ ...p, period: 1.6 + r() * 1.4, phase: r(), size: 14 + r() * 14 }));
+  // 落款のかすれ（朱肉のムラ）
+  sealTex = [];
+  for (let i = 0; i < 70; i++) sealTex.push([r(), r(), 0.4 + r() * 1.3]);
+}
+
+function camera(t) {
+  const k = ease(t / window.DURATION);
+  return { s: 1.02 + 0.07 * k, cx: W * 0.5 + 30 * k, cy: H * 0.52 + 30 * k };
+}
+const toScreen = (cam, u, v) => ({ x: (u * W - cam.cx) * cam.s + W / 2, y: (v * H - cam.cy) * cam.s + H / 2 });
+
+// 青海波（せいがいは）の文様で帯を埋める
+function seigaiha(y0, h, alpha) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, y0, W, h); ctx.clip();
+  ctx.strokeStyle = `rgba(201,165,92,${alpha})`;
+  ctx.lineWidth = 1.2;
+  const R = 26;
+  for (let row = -1; row * R * 0.5 < h + R; row++) {
+    const yy = y0 + row * R * 0.5;
+    const off = (row % 2) * R;
+    for (let x = -R * 2 + off; x < W + R * 2; x += R * 2) {
+      for (let k = 1; k <= 3; k++) {
+        ctx.beginPath(); ctx.arc(x, yy + R, R * k / 3, Math.PI, Math.PI * 2); ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function verticalText(text, x, y, size, font, color, reveal) {
+  ctx.save();
+  ctx.font = font;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const step = size * 1.08;
+  const total = text.length * step;
+  // 上から下へ、筆で書くように見せる
+  ctx.beginPath(); ctx.rect(x - size, y - size * 0.2, size * 2, total * reveal + size * 0.2); ctx.clip();
+  ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = size * 0.35;
+  ctx.fillStyle = color;
+  [...text].forEach((ch, i) => {
+    if ('、。'.includes(ch)) ctx.fillText(ch, x + size * 0.55, y + i * step - size * 0.55);
+    else ctx.fillText(ch, x, y + i * step);
+  });
+  ctx.restore();
+}
+
+function drawSeal(cx, cy, size, t) {
+  const lt = t - 2.7;
+  if (lt < 0) return;
+  const sc = 1 + 0.6 * (1 - backOut(lt / 0.35));
+  const a = clamp(lt / 0.12);
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(-0.05); ctx.scale(sc, sc);
+  ctx.globalAlpha = a * 0.92;
+  const s = size;
+  ctx.fillStyle = SHU;
+  ctx.beginPath(); ctx.roundRect(-s / 2, -s / 2, s, s, s * 0.08); ctx.fill();
+  ctx.strokeStyle = '#f2e6d0'; ctx.lineWidth = s * 0.05;
+  ctx.beginPath(); ctx.roundRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.8, s * 0.04); ctx.stroke();
+  ctx.fillStyle = '#f2e6d0';
+  ctx.font = `800 ${s * 0.62}px Mincho`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(SEAL, 0, s * 0.04);
+  // かすれ
+  ctx.globalCompositeOperation = 'destination-out';
+  for (const [u, v, rr] of sealTex) { ctx.beginPath(); ctx.arc((u - 0.5) * s, (v - 0.5) * s, rr, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
+function render(t) {
+  const cam = camera(t);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = SUMI; ctx.fillRect(0, 0, W, H);
+
+  // 1. 写真：少し締めたコントラストと、落ち着いた暖色
+  const fin = ease(t / 0.9);
+  ctx.save();
+  ctx.translate(W / 2, H / 2); ctx.scale(cam.s, cam.s); ctx.translate(-cam.cx, -cam.cy);
+  ctx.globalAlpha = fin;
+  ctx.filter = 'sepia(0.18) saturate(1.05) contrast(1.12) brightness(1.02)';
+  ctx.drawImage(img, 0, 0, W, H);
+  ctx.filter = 'none';
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  // 2. 焼き色を深める暖かい光（おせんべいの辺りだけ）
+  ctx.globalCompositeOperation = 'soft-light';
+  const warm = ctx.createRadialGradient(W * 0.5, H * 0.62, 50, W * 0.5, H * 0.62, W * 0.55);
+  warm.addColorStop(0, `rgba(255,170,90,${0.55 + 0.1 * Math.sin(t * 2.2)})`);
+  warm.addColorStop(1, 'rgba(60,30,10,0.5)');
+  ctx.fillStyle = warm; ctx.fillRect(0, 0, W, H);
+
+  // 3. 一度だけ、ゆっくり差し込む光（障子越しの光のイメージ）
+  ctx.globalCompositeOperation = 'screen';
+  const sp = (t - 1.2) / 2.4;
+  if (sp > 0 && sp < 1) {
+    const a = Math.sin(sp * Math.PI) * 0.22;
+    ctx.save();
+    ctx.translate(-300 + sp * (W + 600), H / 2); ctx.rotate(0.35);
+    const g = ctx.createLinearGradient(-320, 0, 320, 0);
+    g.addColorStop(0, 'rgba(255,220,160,0)');
+    g.addColorStop(0.5, `rgba(255,225,170,${a})`);
+    g.addColorStop(1, 'rgba(255,220,160,0)');
+    ctx.fillStyle = g; ctx.fillRect(-320, -1400, 640, 2800);
+    ctx.restore();
+  }
+
+  // 4. 湯気
+  for (const s of steam) {
+    let age = ((t - s.born) % s.life + s.life) % s.life;
+    const k = age / s.life;
+    const p = toScreen(cam, s.x, s.y);
+    const x = p.x + Math.sin(age * s.swayF * 6.28 + s.ph) * s.sway * k;
+    const y = p.y - age * s.rise;
+    const rr = s.r0 * (1 + k * 2.5);
+    const a = s.a * Math.sin(k * Math.PI) * fin;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rr);
+    g.addColorStop(0, `rgba(255,245,230,${a})`);
+    g.addColorStop(1, 'rgba(255,245,230,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // 5. 焼き目のつやが静かに光る
+  ctx.globalCompositeOperation = 'lighter';
+  for (const g of glints) {
+    const ph = (t / g.period + g.phase) % 1;
+    const pulse = Math.max(0, Math.sin(ph * Math.PI)) ** 6 * ease((t - 0.8) / 0.6);
+    if (pulse < 0.02) continue;
+    const p = toScreen(cam, g.x, g.y);
+    const sz = g.size * (0.5 + pulse);
+    const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, sz);
+    halo.addColorStop(0, `rgba(255,230,180,${0.8 * pulse})`);
+    halo.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(p.x, p.y, sz, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `rgba(255,240,210,${0.7 * pulse})`; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(p.x - sz * 1.6, p.y); ctx.lineTo(p.x + sz * 1.6, p.y);
+    ctx.moveTo(p.x, p.y - sz * 1.2); ctx.lineTo(p.x, p.y + sz * 1.2);
+    ctx.stroke();
+  }
+
+  // 6. 周辺を墨色に落とす
+  ctx.globalCompositeOperation = 'source-over';
+  const vig = ctx.createRadialGradient(W * 0.5, H * 0.55, H * 0.35, W * 0.5, H * 0.55, W * 0.68);
+  vig.addColorStop(0, 'rgba(21,16,11,0)');
+  vig.addColorStop(1, 'rgba(21,16,11,0.78)');
+  ctx.fillStyle = vig; ctx.fillRect(0, 0, W, H);
+
+  // 7. 金箔
+  for (const l of leaf) {
+    const y = ((l.y + t * l.fall) % (H * 1.2) + H * 1.2) % (H * 1.2) - H * 0.1;
+    const x = l.x + Math.sin(t * 0.9 + l.ph) * l.drift;
+    const flip = Math.cos(t * l.flip + l.ph);
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(l.ph + t * l.spin); ctx.scale(l.s * flip, l.s);
+    ctx.globalAlpha = 0.85 * ease(t / 1.0);
+    const g = ctx.createLinearGradient(-1, -1, 1, 1);
+    const shine = 0.5 + 0.5 * flip;
+    g.addColorStop(0, '#8a6a2c');
+    g.addColorStop(0.5, `hsl(42,60%,${45 + 30 * shine}%)`);
+    g.addColorStop(1, '#a07c36');
+    ctx.fillStyle = g;
+    ctx.beginPath(); l.pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py))); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // 8. 墨色の帯（上下）＋青海波＋金の細線
+  const bar = 78 * easeOut((t - 0.1) / 0.8);
+  if (bar > 0) {
+    ctx.fillStyle = SUMI;
+    ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar);
+    seigaiha(0, bar, 0.22); seigaiha(H - bar, bar, 0.22);
+    const lw = W * easeOut((t - 0.5) / 1.0);
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(W / 2 - lw / 2, bar - 2, lw, 2);
+    ctx.fillRect(W / 2 - lw / 2, H - bar, lw, 2);
+    ctx.fillRect(W / 2 - lw / 2, bar + 6, lw, 1);
+    ctx.fillRect(W / 2 - lw / 2, H - bar - 7, lw, 1);
+  }
+
+  // 9. 縦書きの筆文字と落款（右側）
+  const tx = 1765, ty = 210;
+  verticalText(TITLE, tx, ty, 118, '118px Syuku', '#f4ecdc', easeOut((t - 1.3) / 1.1));
+  verticalText(SUB, tx - 120, ty + 40, 40, '800 40px Mincho', 'rgba(236,222,196,0.92)', easeOut((t - 2.0) / 1.0));
+  drawSeal(tx, ty + TITLE.length * 118 * 1.08 + 80, 104, t);
+}
+window.render = render;
+
+Promise.all([
+  new Promise((ok) => { img.onload = ok; }),
+  document.fonts.load('118px Syuku', TITLE),
+  document.fonts.load('800 40px Mincho', SUB + SEAL),
+]).then(() => {
+  setup();
+  window.READY = true;
+  if (!location.search.includes('render=1')) {
+    const start = performance.now();
+    const loop = () => { render(((performance.now() - start) / 1000) % window.DURATION); requestAnimationFrame(loop); };
+    loop();
+  }
+});
+</script>
+</body>
+</html>

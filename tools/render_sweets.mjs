@@ -3,6 +3,8 @@
 //   node tools/render_sweets.mjs --stills 0.3,2.4 → 指定秒のスチルだけ書き出し（確認用）
 //   node tools/render_sweets.mjs --src pudding.webp --name pudding_sparkle --grade 'sat=0.15&bloom=0.5&warm=0.3&bright=0.4'
 //     → 別の写真で書き出し（--grade で色補正の強さを調整）
+//   node tools/render_sweets.mjs --page wafu.html --src senbei.webp --name senbei_wafu
+//     → 和風・渋めの演出（sweets/wafu.html）で書き出し
 import { chromium } from 'playwright';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -18,11 +20,12 @@ const opt = (k, d) => (args.includes(k) ? args[args.indexOf(k) + 1] : d);
 const src = opt('--src', 'sweets.webp');
 const name = opt('--name', 'sweets_sparkle');
 const grade = opt('--grade', '');
+const pageFile = opt('--page', 'index.html');
 const outDir = args.includes('--out') ? args[args.indexOf('--out') + 1] : path.join(root, 'sweets');
 
 const browser = await chromium.launch({ args: ['--allow-file-access-from-files'] });
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-await page.goto(pathToFileURL(path.join(root, 'sweets/index.html')).href + `?render=1&src=${encodeURIComponent(src)}${grade ? '&' + grade : ''}`);
+await page.goto(pathToFileURL(path.join(root, 'sweets', pageFile)).href + `?render=1&src=${encodeURIComponent(src)}${grade ? '&' + grade : ''}`);
 await page.waitForFunction(() => window.READY === true);
 const stage = page.locator('#stage');
 const grab = (t, file, type = 'png') => page.evaluate((t) => window.render(t), t)

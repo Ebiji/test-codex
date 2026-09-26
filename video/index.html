@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>パッチン登場！ — パチパチパニック</title>
+<style>
+@font-face{font-family:'Dela';src:url('../assets/fonts/DelaGothicOne-Regular.ttf')}
+@font-face{font-family:'MRound';font-weight:800;src:url('../assets/fonts/MPLUSRounded1c-ExtraBold.ttf')}
+@font-face{font-family:'Baloo';font-weight:800;src:url('../assets/fonts/Baloo2-ExtraBold.ttf')}
+html,body{margin:0;background:#1a0630}
+#stage{position:relative;width:1080px;height:1920px;overflow:hidden;background:#12031f;transform-origin:0 0}
+.layer{position:absolute;left:0;top:0;width:1080px;height:1920px}
+.abs{position:absolute;left:0;top:0;will-change:transform,opacity}
+svg{overflow:visible;display:block}
+.cap{position:absolute;left:0;width:1080px;text-align:center;font-family:'MRound';font-weight:800;color:#fff;
+  font-size:64px;letter-spacing:.06em;text-shadow:0 6px 0 #2B0B3F,0 0 30px rgba(0,0,0,.4);-webkit-text-stroke:3px #2B0B3F;paint-order:stroke fill}
+.big{font-family:'Dela';font-size:150px;color:#FFE347;-webkit-text-stroke:14px #2B0B3F;text-shadow:10px 12px 0 #2B0B3F}
+.name{font-family:'Dela';font-size:190px;color:#fff;-webkit-text-stroke:16px #2B0B3F;text-shadow:10px 12px 0 #2B0B3F}
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- 背景 -->
+  <svg class="layer" id="bg" viewBox="0 0 1080 1920">
+    <defs>
+      <radialGradient id="space" cx=".5" cy=".75" r=".9"><stop offset="0" stop-color="#4A1286"/><stop offset="1" stop-color="#0E0220"/></radialGradient>
+      <radialGradient id="burst" cx=".5" cy=".5" r=".75"><stop offset="0" id="b1" stop-color="#7A1FD1"/><stop offset="1" id="b2" stop-color="#3A0870"/></radialGradient>
+      <radialGradient id="planet" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#C08BFF"/><stop offset=".6" stop-color="#9046E0"/><stop offset="1" stop-color="#4B0F8C"/></radialGradient>
+    </defs>
+    <g id="spaceG">
+      <rect width="1080" height="1920" fill="url(#space)"/>
+      <g id="stars"></g>
+      <g id="planetG">
+        <circle cx="540" cy="2150" r="820" fill="url(#planet)" stroke="#2B0B3F" stroke-width="14"/>
+        <g id="planetSparks"></g>
+      </g>
+    </g>
+    <g id="burstG" opacity="0">
+      <rect width="1080" height="1920" fill="url(#burst)"/>
+      <path id="rays" fill="#fff" opacity=".13"/>
+    </g>
+  </svg>
+
+  <div class="abs" id="meteor"></div>
+  <div class="abs" id="pacchin"></div>
+  <div class="abs" id="shuwarin"></div>
+  <div class="abs" id="pack"></div>
+  <div class="abs" id="logo"></div>
+  <div class="abs" id="fx"></div>
+
+  <div class="cap" id="cap1" style="top:300px">とおい とおい<br>パチパチ星で…</div>
+  <div class="cap big" id="pop" style="top:230px">パッチーン!</div>
+  <div class="cap" id="nameSub" style="top:1450px;font-size:54px">パチパチ星からやってきた</div>
+  <div class="cap name" id="name" style="top:1520px">パッチン</div>
+  <div class="cap" id="cap2" style="top:250px;font-size:74px">食べた味に<br>パチっと変身!</div>
+  <div class="cap big" id="flavor" style="top:1500px;font-size:120px"></div>
+  <div class="cap" id="cap3" style="top:250px;font-size:74px">あいぼうの<br>シュワリン</div>
+  <div class="cap big" id="shuwa" style="top:1480px;font-size:120px;color:#BFF0FF">シュワ〜</div>
+  <div class="cap big" id="end" style="top:1690px;font-size:96px">パチっと、おどろけ!</div>
+  <div id="flash" class="layer" style="background:#fff;opacity:0"></div>
+</div>
+
+<script src="parts.js"></script>
+<script>
+const W = 1080, H = 1920, DUR = 15;
+const P = window.PARTS;
+const NS = 'http://www.w3.org/2000/svg';
+const $ = (id) => document.getElementById(id);
+
+// ---------- 乱数（決定的） ----------
+let seed = 42;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+// ---------- イージング ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+const easeIn = (x) => x * x * x;
+const backOut = (x) => { const c = 1.9; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const elastic = (x) => x === 0 ? 0 : x === 1 ? 1 : Math.pow(2, -10 * x) * Math.sin((x * 10 - .75) * (2 * Math.PI) / 3) + 1;
+const win = (t, a, b, fi = .25, fo = .25) => Math.min(prog(t, a, a + fi), 1 - prog(t, b - fo, b));
+
+function svgWrap(inner, vb) {
+  return `<svg xmlns="${NS}" viewBox="${vb}" width="${vb.split(' ')[2]}" height="${vb.split(' ')[3]}">${inner}</svg>`;
+}
+function place(el, x, y, s = 1, r = 0, o = 1) {
+  el.style.transform = `translate(${x}px,${y}px) rotate(${r}deg) scale(${s})`;
+  el.style.opacity = o;
+}
+
+// ---------- セットアップ ----------
+const stars = $('stars');
+for (let i = 0; i < 90; i++) {
+  const c = document.createElementNS(NS, 'circle');
+  c.setAttribute('cx', rnd() * W); c.setAttribute('cy', rnd() * 1500);
+  c.setAttribute('r', 1.5 + rnd() * 4); c.setAttribute('fill', rnd() > .8 ? '#FFE347' : '#fff');
+  c.dataset.ph = rnd() * 6.28;
+  stars.appendChild(c);
+}
+const pSparks = $('planetSparks');
+for (let i = 0; i < 16; i++) {
+  const g = document.createElementNS(NS, 'path');
+  const x = 180 + rnd() * 720, y = 1400 + rnd() * 250, r = 18 + rnd() * 26;
+  g.setAttribute('d', `M${x},${y-r} Q${x+3},${y-3} ${x+r},${y} Q${x+3},${y+3} ${x},${y+r} Q${x-3},${y+3} ${x-r},${y} Q${x-3},${y-3} ${x},${y-r}Z`);
+  g.setAttribute('fill', i % 3 ? '#FFE347' : '#fff');
+  g.dataset.ph = rnd() * 6.28; g.dataset.sp = 3 + rnd() * 5;
+  g.style.transformOrigin = `${x}px ${y}px`; g.style.transformBox = 'view-box';
+  pSparks.appendChild(g);
+}
+let rays = '';
+for (let i = 0; i < 24; i++) {
+  const a0 = i * 15 * Math.PI / 180, a1 = (i * 15 + 7.5) * Math.PI / 180;
+  rays += `M540,960 L${540 + Math.cos(a0) * 2000},${960 + Math.sin(a0) * 2000} L${540 + Math.cos(a1) * 2000},${960 + Math.sin(a1) * 2000}Z `;
+}
+$('rays').setAttribute('d', rays);
+
+// パッチン（フレーバー別・表情別を重ねて表示切替）
+const CH_KEYS = ['grape', 'soda', 'cola', 'melon', 'lemon', 'happy', 'wide'];
+$('pacchin').innerHTML = CH_KEYS.map(k =>
+  `<div data-k="${k}" style="position:absolute;left:-300px;top:-340px;opacity:0">${svgWrap(`<g transform="translate(300,340)">${P['pacchin_' + k]}</g>`, '0 0 600 600')}</div>`).join('');
+$('shuwarin').innerHTML = `<div style="position:absolute;left:-160px;top:-170px">${svgWrap(`<g transform="translate(160,170)">${P.shuwarin}</g>`, '0 0 320 300')}</div>`;
+$('pack').innerHTML = `<div style="position:absolute;left:-385px;top:-550px;filter:drop-shadow(18px 24px 0 rgba(20,0,40,.55))">${svgWrap(P.package, '0 0 770 1100')}</div>`;
+$('logo').innerHTML = `<div style="position:absolute;left:-400px;top:-190px">${svgWrap(`<g transform="translate(400,190)">${P.logo}</g>`, '0 0 800 580')}</div>`;
+$('meteor').innerHTML = `<div style="position:absolute;left:-120px;top:-120px">${svgWrap(
+  `<circle cx="120" cy="120" r="70" fill="#FFE347" stroke="#2B0B3F" stroke-width="10"/>
+   <path d="M120,30 Q128,112 210,120 Q128,128 120,210 Q112,128 30,120 Q112,112 120,30Z" fill="#fff"/>`, '0 0 240 240')}</div>`;
+
+// パチパチ・エフェクト（放射状の火花）
+const fx = $('fx');
+const burstSparks = [];
+for (let i = 0; i < 26; i++) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:absolute;left:-22px;top:-22px;width:44px;height:44px';
+  const col = ['#FFE347', '#fff', '#FF5CC8', '#8FDCFF'][i % 4];
+  d.innerHTML = svgWrap(`<path d="M22,0 Q24,20 44,22 Q24,24 22,44 Q20,24 0,22 Q20,20 22,0Z" fill="${col}" stroke="#2B0B3F" stroke-width="3"/>`, '0 0 44 44');
+  d.dataset.a = (i / 26) * 6.283 + rnd() * .2;
+  d.dataset.v = 380 + rnd() * 420;
+  fx.appendChild(d); burstSparks.push(d);
+}
+
+const FLAVOR_SEQ = [
+  ['soda', 'ソーダ味', '#1C9BE8', '#0A3F8F'],
+  ['cola', 'コーラ味', '#D8232F', '#6E0B12'],
+  ['melon', 'メロンソーダ味', '#20B85A', '#0A5A2A'],
+  ['lemon', 'レモンスカッシュ味', '#FFC21A', '#E07A00'],
+  ['grape', 'グレープ味', '#7A1FD1', '#3A0870'],
+];
+
+function showChar(k) {
+  for (const el of $('pacchin').children) el.style.opacity = el.dataset.k === k ? 1 : 0;
+}
+function sparkBurst(t, t0, cx, cy, dur = .9) {
+  const p = prog(t, t0, t0 + dur);
+  for (const d of burstSparks) {
+    const a = +d.dataset.a, v = +d.dataset.v * easeOut(p);
+    const on = t >= t0 && p < 1;
+    place(d, cx + Math.cos(a) * v, cy + Math.sin(a) * v, on ? (1.4 - p) : 0, p * 360, on ? 1 - p * p : 0);
+  }
+}
+
+// ---------- メイン：時刻 t の 1 フレームを描く ----------
+window.render = function (t) {
+  // 背景
+  for (const c of stars.children) c.setAttribute('opacity', .35 + .65 * Math.abs(Math.sin(t * 2 + +c.dataset.ph)));
+  for (const g of pSparks.children) {
+    const s = Math.max(0, Math.sin(t * +g.dataset.sp + +g.dataset.ph));
+    g.style.transform = `scale(${s})`;
+  }
+  $('planetG').setAttribute('transform', `translate(0,${-120 * easeOut(prog(t, 0, 2.2))})`);
+  const burstOn = t >= 3.4;
+  $('burstG').setAttribute('opacity', burstOn ? 1 : 0);
+  $('spaceG').setAttribute('opacity', burstOn ? 0 : 1);
+  $('rays').setAttribute('transform', `rotate(${t * 8} 540 960)`);
+
+  // S1：パチパチ星
+  place($('cap1'), 0, -30 * (1 - easeOut(prog(t, .2, .9))), 1, 0, win(t, .2, 2.4, .5, .4));
+
+  // S2：流れ星 → フラッシュ
+  const mp = prog(t, 2.0, 3.4);
+  place($('meteor'), 540 + 300 * (1 - easeIn(mp)), 1200 - 500 * easeIn(mp), .3 + 3.5 * easeIn(mp), t * 400, t >= 2.0 && t < 3.4 ? 1 : 0);
+  $('flash').style.opacity = t >= 3.3 ? Math.max(0, 1 - (t - 3.35) / .35) : 0;
+
+  // 背景色（フレーバー変身時に切り替え）
+  let bg = ['#7A1FD1', '#3A0870'];
+  // S3：パッチン登場
+  let chK = 'grape', chX = 540, chY = 1000, chS = 0, chR = 0;
+  if (t >= 3.4) {
+    const e = elastic(prog(t, 3.4, 4.6));
+    chS = 1.3 * e;
+    chR = Math.sin(t * 5) * 3;
+    chY = 980 + Math.sin(t * 4) * 12;
+    chK = (t > 3.5 && t < 4.2) ? 'wide' : 'grape';
+  }
+  sparkBurst(t, 3.45, 540, 900, 1.1);
+  place($('pop'), 0, 0, backOut(prog(t, 3.6, 4.0)), -4, win(t, 3.6, 5.2, .1, .3));
+  place($('nameSub'), 0, 0, 1, 0, win(t, 4.6, 6.8, .3, .25));
+  place($('name'), 0, 0, backOut(prog(t, 4.8, 5.2)), 0, win(t, 4.8, 6.8, .1, .25));
+
+  // S4：味で変身
+  if (t >= 6.8 && t < 9.4) {
+    const i = Math.min(4, Math.floor((t - 7.1) / .46));
+    if (t >= 7.1) {
+      const f = FLAVOR_SEQ[i];
+      chK = f[0]; bg = [f[2], f[3]];
+      $('flavor').textContent = f[1];
+      const lt = (t - 7.1) - i * .46;
+      chS = 1.2 + .12 * Math.max(0, 1 - lt * 5);
+      place($('flavor'), 0, 0, backOut(clamp(lt * 6)), 0, 1);
+    } else {
+      $('flavor').style.opacity = 0;
+      chS = 1.2;
+    }
+    chY = 1000;
+  } else {
+    $('flavor').style.opacity = 0;
+  }
+  place($('cap2'), 0, 0, backOut(prog(t, 6.8, 7.1)), 0, win(t, 6.8, 9.4, .1, .25));
+  if (t >= 6.8 && t < 7.1) chS = 1.2;
+  if (t >= 7.1 && t < 9.4) sparkBurst(t, 7.1 + Math.min(4, Math.floor((t - 7.1) / .46)) * .46, 540, 1000, .45);
+
+  // S5：シュワリン
+  let swX = -300, swY = 1180, swS = 1.5;
+  if (t >= 9.4) {
+    const p = easeOut(prog(t, 9.4, 10.1));
+    swX = -300 + 620 * p; swY = 1180 + Math.sin(t * 3) * 14;
+    chX = 540 + 190 * easeOut(prog(t, 9.4, 10.0)); chS = 1.05; chK = t > 10.6 ? 'happy' : 'grape';
+    chY = 920 + Math.abs(Math.sin(t * 6)) * -30;
+  }
+  place($('shuwarin'), swX, swY, swS, Math.sin(t * 2) * 6, t >= 9.4 && t < 11.8 ? 1 : 0);
+  place($('cap3'), 0, 0, backOut(prog(t, 9.6, 9.9)), 0, win(t, 9.6, 11.8, .1, .25));
+  place($('shuwa'), 0, -20 * Math.sin(t * 3), 1, -3, win(t, 10.2, 11.8, .3, .25));
+
+  // S6：パッケージ＆ロゴ
+  const pk = easeOut(prog(t, 11.8, 12.5)), pe = easeOut(prog(t, 12.8, 13.3));
+  const packY = 1000 + 900 * (1 - pk) + 190 * pe, packS = .98 - .2 * pe;
+  place($('pack'), 540, packY, packS, -4 + 4 * pk + (t > 12.5 ? Math.sin(t * 2.4) * 1.2 : 0), t >= 11.8 ? 1 : 0);
+  place($('logo'), 540, 330, .95 * backOut(prog(t, 12.9, 13.35)) * (1 + .03 * Math.sin(t * 5)), 0, t >= 12.9 ? 1 : 0);
+  place($('end'), 0, 0, backOut(prog(t, 13.4, 13.8)), -3, t >= 13.4 ? 1 : 0);
+  if (t >= 12.9) sparkBurst(t, 12.95, 540, 360, 1.0);
+  if (t >= 11.8) { chS = 0; }
+
+  $('b1').setAttribute('stop-color', bg[0]);
+  $('b2').setAttribute('stop-color', bg[1]);
+
+  showChar(chK);
+  place($('pacchin'), chX, chY, chS, chR, chS > 0 ? 1 : 0);
+
+  // まばたき・クラウンのパチパチ
+  const blink = (t % 2.6) > 2.45 ? .1 : 1;
+  for (const el of document.querySelectorAll('#pacchin .eyes')) {
+    el.style.transformBox = 'fill-box'; el.style.transformOrigin = 'center';
+    el.style.transform = `scaleY(${blink})`;
+  }
+  for (const el of document.querySelectorAll('#pacchin .sparks')) {
+    el.style.transformBox = 'fill-box'; el.style.transformOrigin = 'center bottom';
+    el.style.transform = `scale(${.85 + .25 * Math.abs(Math.sin(t * 11))})`;
+    el.style.opacity = .6 + .4 * Math.abs(Math.sin(t * 17));
+  }
+  for (const el of document.querySelectorAll('#pacchin .crown')) {
+    el.style.transformBox = 'fill-box'; el.style.transformOrigin = 'center bottom';
+    el.style.transform = `translateY(${-6 * Math.abs(Math.sin(t * 9))}px)`;
+  }
+};
+window.DURATION = DUR;
+
+// ブラウザで直接開いたときはリアルタイム再生
+if (!/render=1/.test(location.search)) {
+  const fit = () => { const s = Math.min(innerWidth / W, innerHeight / H); $('stage').style.transform = `scale(${s})`; };
+  addEventListener('resize', fit); fit();
+  const t0 = performance.now();
+  const loop = () => { window.render(((performance.now() - t0) / 1000) % (DUR + 1)); requestAnimationFrame(loop); };
+  document.fonts.ready.then(loop);
+}
+</script>
+</body>
+</html>

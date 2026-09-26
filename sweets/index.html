@@ -26,7 +26,11 @@ const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const ease = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
 
 const img = new Image();
-img.src = 'sweets.webp';
+const params = new URLSearchParams(location.search);
+img.src = params.get('src') || 'sweets.webp';
+// 色補正の強さ（元写真がすでに暖色なら弱める）: ?sat=0.45&bloom=1&warm=1&bright=0.47
+const grade = ['sat', 'bloom', 'warm', 'bright'].reduce((o, k) => (params.has(k) ? { ...o, [k]: +params.get(k) } : o),
+  { sat: 0.45, bloom: 1, warm: 1, bright: 0.47 });
 
 let glints = [], bokeh = [], glitter = [], stars = [], bloomCanvas;
 
@@ -37,10 +41,14 @@ function findHighlights() {
   const g = c.getContext('2d'); g.drawImage(img, 0, 0, sw, sh);
   const d = g.getImageData(0, 0, sw, sh).data;
   const lum = (x, y) => { const i = (y * sw + x) * 4; return 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; };
+  const all = [];
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) all.push(lum(x, y));
+  all.sort((a, b) => a - b);
+  const th = Math.min(200, all[Math.floor(all.length * 0.97)]); // 画像ごとの明るさの差を吸収
   const cand = [];
   for (let y = 2; y < sh - 2; y++) for (let x = 2; x < sw - 2; x++) {
     const l = lum(x, y);
-    if (l < 200) continue;
+    if (l < th) continue;
     let isMax = true;
     for (let dy = -2; dy <= 2 && isMax; dy++) for (let dx = -2; dx <= 2; dx++) {
       if ((dx || dy) && lum(x + dx, y + dy) > l) { isMax = false; break; }
@@ -144,12 +152,12 @@ function render(t) {
   const intro = ease(t / 0.35);
   ctx.save();
   ctx.translate(W / 2, H / 2); ctx.scale(cam.s, cam.s); ctx.translate(-cam.cx, -cam.cy);
-  ctx.filter = `saturate(${1.0 + 0.45 * intro}) contrast(${1 + 0.1 * intro}) brightness(${0.6 + 0.47 * intro})`;
+  ctx.filter = `saturate(${1.0 + grade.sat * intro}) contrast(${1 + 0.1 * intro}) brightness(${0.6 + grade.bright * intro})`;
   ctx.drawImage(img, 0, 0, W, H);
   ctx.filter = 'none';
   // 2. ブルーム（ふわっと光る。ゆっくり脈動）
   ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = 0.14 + 0.1 * Math.sin(t * Math.PI * 1.6) ** 2;
+  ctx.globalAlpha = (0.14 + 0.1 * Math.sin(t * Math.PI * 1.6) ** 2) * grade.bloom;
   ctx.drawImage(bloomCanvas, 0, 0, W, H);
   ctx.restore();
 
@@ -157,8 +165,8 @@ function render(t) {
   ctx.globalCompositeOperation = 'soft-light';
   ctx.globalAlpha = 1;
   const warm = ctx.createRadialGradient(W / 2, H * 0.55, 100, W / 2, H * 0.55, W * 0.7);
-  warm.addColorStop(0, 'rgba(255,215,160,0.45)');
-  warm.addColorStop(1, 'rgba(255,120,90,0.1)');
+  warm.addColorStop(0, `rgba(255,215,160,${0.45 * grade.warm})`);
+  warm.addColorStop(1, `rgba(255,120,90,${0.1 * grade.warm})`);
   ctx.fillStyle = warm; ctx.fillRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'source-over';
   const vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, W * 0.72);

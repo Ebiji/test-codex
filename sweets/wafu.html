@@ -12,7 +12,7 @@
 <canvas id="stage" width="1920" height="1080"></canvas>
 <script>
 // おせんべいの写真に和風で渋めの演出をかける 5 秒動画。
-// 墨色の帯と青海波、立ちのぼる湯気、舞う金箔、焼き目のつやの控えめな光。
+// 墨色の帯と青海波、湯のみの湯気、舞う金箔、焼き目のつやの控えめな光。
 // window.render(t) で任意時刻のフレームを描画する（tools/render_sweets.mjs が書き出しに使う）。
 const W = 1920, H = 1080;
 window.DURATION = 5;
@@ -62,8 +62,8 @@ function findHighlights() {
 
 function setup() {
   const r = rng(1945);
-  // 湯気：湯のみから 1 本、焼きたてのおせんべいから数本
-  const sources = [{ x: 0.13, y: 0.2, w: 0.08, n: 70 }, { x: 0.5, y: 0.42, w: 0.3, n: 110 }];
+  // 湯気：湯のみからだけ（おせんべいには付けない）
+  const sources = [{ x: 0.13, y: 0.2, w: 0.08, n: 70 }];
   for (const s of sources) for (let i = 0; i < s.n; i++) steam.push({
     x: s.x + (r() - 0.5) * s.w, y: s.y, life: 2.2 + r() * 1.6, born: r() * 4 - 4, rise: 110 + r() * 90,
     sway: 20 + r() * 40, swayF: 0.3 + r() * 0.5, ph: r() * 6.28, r0: 22 + r() * 22, a: 0.14 + r() * 0.1,
